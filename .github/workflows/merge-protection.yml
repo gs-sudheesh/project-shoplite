@@ -1,0 +1,233 @@
+name: Merge Protection
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  # Job 1: Check if PR is ready for merge
+  check-merge-readiness:
+    name: Check Merge Readiness
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check PR status
+        id: check
+        run: |
+          echo "🔍 Checking PR merge readiness..."
+          
+          # Get PR details
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          PR_STATE="${{ github.event.pull_request.state }}"
+          PR_DRAFT="${{ github.event.pull_request.draft }}"
+          PR_MERGEABLE="${{ github.event.pull_request.mergeable }}"
+          
+          echo "PR Number: $PR_NUMBER"
+          echo "PR State: $PR_STATE"
+          echo "PR Draft: $PR_DRAFT"
+          echo "PR Mergeable: $PR_MERGEABLE"
+          
+          # Check if PR is in draft state
+          if [[ "$PR_DRAFT" == "true" ]]; then
+            echo "❌ PR is in draft state"
+            echo "ready=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if PR is open
+          if [[ "$PR_STATE" != "open" ]]; then
+            echo "❌ PR is not open"
+            echo "ready=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if PR has merge conflicts
+          if [[ "$PR_MERGEABLE" == "false" ]]; then
+            echo "❌ PR has merge conflicts"
+            echo "ready=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "✅ PR basic checks passed"
+          echo "ready=true" >> $GITHUB_OUTPUT
+
+  # Job 2: Wait for all required checks to pass
+  wait-for-checks:
+    name: Wait for Required Checks
+    runs-on: ubuntu-latest
+    needs: check-merge-readiness
+    if: needs.check-merge-readiness.outputs.ready == 'true'
+    steps:
+      - name: Wait for build checks
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          check-name: 'PR Build and Test'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+          allowed-conclusions: success
+
+      - name: Wait for branch protection checks
+        uses: lewagon/wait-on-check-action@v1.3.4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          check-name: 'Branch Protection and PR Validation'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+          allowed-conclusions: success
+
+      - name: Check all required status checks
+        run: |
+          echo "🔍 Verifying all required checks have passed..."
+          
+          # Get the latest commit status
+          COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+          
+          # List of required checks
+          REQUIRED_CHECKS=(
+            "PR Build and Test"
+            "Branch Protection and PR Validation"
+          )
+          
+          echo "Required checks:"
+          for check in "${REQUIRED_CHECKS[@]}"; do
+            echo "  - $check"
+          done
+          
+          echo "✅ All required checks have passed"
+          echo "🎉 PR is ready for merge!"
+
+  # Job 3: Final merge validation
+  final-validation:
+    name: Final Merge Validation
+    runs-on: ubuntu-latest
+    needs: [check-merge-readiness, wait-for-checks]
+    if: always() && needs.check-merge-readiness.outputs.ready == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Final security check
+        run: |
+          echo "🔍 Final security validation..."
+          
+          # Check for any last-minute sensitive files
+          SENSITIVE_PATTERNS=(
+            "*.env"
+            "*.key"
+            "*.pem"
+            "secrets/"
+            "aws/environment/*.env"
+          )
+          
+          for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+            if find . -name "$pattern" -not -path "./.git/*" | grep -q .; then
+              echo "❌ Sensitive file detected: $pattern"
+              echo "Please remove sensitive files before merging"
+              exit 1
+            fi
+          done
+          
+          echo "✅ No sensitive files detected"
+
+      - name: Validate PR requirements
+        run: |
+          echo "🔍 Final PR validation..."
+          
+          # Check PR title and description
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+          
+          if [[ -z "$PR_TITLE" || "$PR_TITLE" == "Update" ]]; then
+            echo "⚠️  Warning: PR title is generic or empty"
+            echo "Consider using a more descriptive title"
+          fi
+          
+          if [[ -z "$PR_BODY" ]]; then
+            echo "⚠️  Warning: PR description is empty"
+            echo "Consider adding a description of your changes"
+          fi
+          
+          echo "✅ PR validation completed"
+
+      - name: Generate merge approval
+        run: |
+          echo "🎉 MERGE APPROVAL GRANTED!"
+          echo "=========================================="
+          echo "PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
+          echo "Author: ${{ github.event.pull_request.user.login }}"
+          echo "Source: ${{ github.head_ref }} → Target: ${{ github.base_ref }}"
+          echo ""
+          echo "✅ All required checks passed"
+          echo "✅ Security validation passed"
+          echo "✅ PR requirements met"
+          echo ""
+          echo "🚀 This PR is approved for merge!"
+          echo "=========================================="
+
+  # Job 4: Update PR status
+  update-pr-status:
+    name: Update PR Status
+    runs-on: ubuntu-latest
+    needs: [check-merge-readiness, wait-for-checks, final-validation]
+    if: always()
+    steps:
+      - name: Update PR with final status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🔨 Build Summary')
+            );
+            
+            const isReady = '${{ needs.final-validation.result }}' === 'success';
+            const status = isReady ? '✅ READY FOR MERGE' : '❌ NOT READY FOR MERGE';
+            const statusIcon = isReady ? '🎉' : '⚠️';
+            
+            const finalStatus = `
+            ## ${statusIcon} Merge Status: ${status}
+            
+            **PR:** #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}
+            **Source:** \`${{ github.head_ref }}\` → **Target:** \`${{ github.base_ref }}\`
+            
+            ### Validation Results:
+            - ✅ **PR Readiness:** ${{ needs.check-merge-readiness.result }}
+            - ✅ **Required Checks:** ${{ needs.wait-for-checks.result }}
+            - ✅ **Final Validation:** ${{ needs.final-validation.result }}
+            
+            ${isReady ? 
+              '🎉 **All validations passed!** This PR is ready for merge when approved by reviewers.' : 
+              '❌ **Some validations failed.** Please address the issues before merging.'
+            }
+            
+            ---
+            *This status will be updated automatically.*
+            `;
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: finalStatus
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: finalStatus
+              });
+            }

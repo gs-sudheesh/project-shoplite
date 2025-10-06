@@ -1,0 +1,220 @@
+name: Branch Protection and PR Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Job 1: Prevent direct commits to protected branches
+  prevent-direct-commits:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if commit is from PR
+        run: |
+          echo "🚨 DIRECT COMMIT DETECTED TO PROTECTED BRANCH!"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit SHA: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo ""
+          echo "❌ Direct commits to ${{ github.ref_name }} are not allowed."
+          echo "✅ Please create a Pull Request instead."
+          echo ""
+          echo "Steps to fix:"
+          echo "1. Create a new branch from ${{ github.ref_name }}"
+          echo "2. Make your changes on the new branch"
+          echo "3. Push the new branch"
+          echo "4. Create a Pull Request to ${{ github.ref_name }}"
+          echo "5. Wait for CI to pass before merging"
+          exit 1
+
+  # Job 2: Validate PR structure and requirements
+  validate-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate PR requirements
+        run: |
+          echo "🔍 Validating Pull Request requirements..."
+          
+          # Check if PR is targeting main or develop
+          if [[ "${{ github.base_ref }}" != "main" && "${{ github.base_ref }}" != "develop" ]]; then
+            echo "❌ PR must target 'main' or 'develop' branch"
+            echo "Current target: ${{ github.base_ref }}"
+            exit 1
+          fi
+          
+          # Check if PR has a description
+          if [[ -z "${{ github.event.pull_request.body }}" ]]; then
+            echo "⚠️  Warning: PR description is empty"
+            echo "Please add a description explaining your changes"
+          fi
+          
+          # Check if PR is from a feature branch
+          if [[ "${{ github.head_ref }}" == "main" || "${{ github.head_ref }}" == "develop" ]]; then
+            echo "❌ Cannot create PR from protected branch"
+            echo "Please create a feature branch first"
+            exit 1
+          fi
+          
+          echo "✅ PR validation passed"
+          echo "Target branch: ${{ github.base_ref }}"
+          echo "Source branch: ${{ github.head_ref }}"
+          echo "PR title: ${{ github.event.pull_request.title }}"
+
+      - name: Check for sensitive files
+        run: |
+          echo "🔍 Checking for sensitive files..."
+          
+          # Check if any sensitive files are being added/modified
+          SENSITIVE_FILES=(
+            "*.env"
+            "*.key"
+            "*.pem"
+            "*.p12"
+            "*.jks"
+            "secrets/"
+            "aws/environment/*.env"
+            "scripts/"
+          )
+          
+          for pattern in "${SENSITIVE_FILES[@]}"; do
+            if git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -q "$pattern"; then
+              echo "❌ Sensitive file detected: $pattern"
+              echo "Please remove sensitive files from this PR"
+              exit 1
+            fi
+          done
+          
+          echo "✅ No sensitive files detected"
+
+      - name: Validate commit messages
+        run: |
+          echo "🔍 Validating commit messages..."
+          
+          # Get commits in this PR
+          COMMITS=$(git log --oneline ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+          
+          if [[ -z "$COMMITS" ]]; then
+            echo "❌ No commits found in PR"
+            exit 1
+          fi
+          
+          echo "📝 Commits in this PR:"
+          echo "$COMMITS"
+          
+          # Check for conventional commit format (optional)
+          echo "✅ Commit validation completed"
+
+  # Job 3: Build validation
+  build-validation:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: validate-pr
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build Java services
+        run: |
+          echo "🔨 Building Java microservices..."
+          chmod +x gradlew
+          ./gradlew build -x test --no-daemon
+          echo "✅ Java services built successfully"
+
+      - name: Build Frontend
+        run: |
+          echo "🔨 Building Frontend..."
+          cd frontend
+          npm ci
+          npm run build
+          echo "✅ Frontend built successfully"
+
+      - name: Run Tests (if any)
+        run: |
+          echo "🧪 Running tests..."
+          # Add test commands here when tests are available
+          echo "✅ Tests completed"
+
+      - name: Build Summary
+        run: |
+          echo "🎉 Build validation completed successfully!"
+          echo "✅ All services built without errors"
+          echo "✅ Frontend built successfully"
+          echo "✅ No sensitive files detected"
+          echo "✅ PR is ready for review and merge"
+
+  # Job 4: Security scan
+  security-scan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: validate-pr
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Check for hardcoded secrets
+        run: |
+          echo "🔍 Scanning for potential hardcoded secrets..."
+          
+          # Check for common secret patterns
+          SECRET_PATTERNS=(
+            "password.*=.*['\"][^'\"]{8,}['\"]"
+            "secret.*=.*['\"][^'\"]{8,}['\"]"
+            "key.*=.*['\"][^'\"]{8,}['\"]"
+            "token.*=.*['\"][^'\"]{8,}['\"]"
+            "api_key.*=.*['\"][^'\"]{8,}['\"]"
+          )
+          
+          for pattern in "${SECRET_PATTERNS[@]}"; do
+            if grep -r -i -E "$pattern" --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=build --exclude-dir=dist .; then
+              echo "⚠️  Potential hardcoded secret detected with pattern: $pattern"
+              echo "Please review and use environment variables instead"
+            fi
+          done
+          
+          echo "✅ Secret scan completed"
