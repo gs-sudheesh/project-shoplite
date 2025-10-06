@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: order-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH0_ISSUER_URI}
+          audiences:
+            - ${AUTH0_AUDIENCE}
+  cloud:
+    discovery:
+      enabled: true
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update   # for dev/demo, change to validate in prod
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+      #Added producer configuration under spring.kafka.producer:
+      #This tells Spring Boot to serialize POJO objects (like OrderPlaced) to JSON instead of expecting a String.
+      #Consumer config stays the same — it will deserialize JSON into your POJO automatically.
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: ${SERVER_PORT}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    org.springframework.kafka: INFO
+    io.micrometer.tracing: DEBUG
+    com.shoplite.orders: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level [%X{traceId},%X{spanId}] %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+
+# Micrometer Tracing Configuration - Jaeger
+micrometer:
+  tracing:
+    sampler:
+      probability: 1.0  # 100% sampling for development
+  zipkin:
+    endpoint: ${JAEGER_ENDPOINT}  # Jaeger Zipkin compatible endpoint

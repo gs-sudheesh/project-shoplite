@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: catalog-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH0_ISSUER_URI}
+          audiences:
+            - ${AUTH0_AUDIENCE}
+  cloud:
+    discovery:
+      enabled: true
+
+  data:
+    mongodb:
+      # Connect with catalog user created in docker-compose
+      uri: mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DATABASE}?authSource=${MONGO_DATABASE}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    consumer:
+      group-id: catalog-service
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted-packages: "com.shoplite.catalog.events,com.shoplite.orders.events"
+        spring.json.value.default.type: "com.shoplite.orders.events.OrderPlaced"
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+server:
+  port: ${SERVER_PORT}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_DEFAULT_ZONE}
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    org.springframework.kafka: INFO
+    io.micrometer.tracing: DEBUG
+    com.shoplite.catalog: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level [%X{traceId},%X{spanId}] %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+
+# Micrometer Tracing Configuration - Jaeger
+micrometer:
+  tracing:
+    sampler:
+      probability: 1.0  # 100% sampling for development
+  zipkin:
+    endpoint: ${JAEGER_ENDPOINT}  # Jaeger Zipkin compatible endpoint

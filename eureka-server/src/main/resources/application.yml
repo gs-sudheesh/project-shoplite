@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: eureka-server
+
+server:
+  port: ${SERVER_PORT}
+
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+  server:
+    wait-time-in-ms-when-sync-empty: 0
+
+# Tracing Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  tracing:
+    sampling:
+      probability: 1.0
+
+# Micrometer Tracing Configuration - Jaeger
+micrometer:
+  tracing:
+    sampler:
+      probability: 1.0  # 100% sampling for development
+  zipkin:
+    endpoint: ${JAEGER_ENDPOINT}  # Jaeger Zipkin compatible endpoint
+
+# Enhanced Logging with Trace Context
+logging:
+  level:
+    io.micrometer.tracing: DEBUG
+    com.shoplite.eureka: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level [%X{traceId},%X{spanId}] %logger{36} - %msg%n"

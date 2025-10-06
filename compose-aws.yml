@@ -1,0 +1,287 @@
+# Docker Compose for AWS ECS Fargate Deployment
+# This file is optimized for AWS deployment with managed services
+version: '3.8'
+
+services:
+  # ========================================
+  # MICROSERVICES (ECS Fargate)
+  # ========================================
+  
+  eureka-server:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/shoplite-eureka:latest
+    container_name: shoplite-eureka
+    environment:
+      - SERVER_PORT=8761
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - SPRING_PROFILES_ACTIVE=aws
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - shoplite-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  api-gateway:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/shoplite-api-gateway:latest
+    container_name: shoplite-api-gateway
+    environment:
+      - SERVER_PORT=8080
+      - AUTH0_ISSUER_URI=${AUTH0_ISSUER_URI}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - SPRING_PROFILES_ACTIVE=aws
+    ports:
+      - "8080:8080"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - shoplite-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  order-service:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/shoplite-order:latest
+    container_name: shoplite-order
+    environment:
+      - SERVER_PORT=8081
+      - AUTH0_ISSUER_URI=${AUTH0_ISSUER_URI}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
+      - DB_HOST=${RDS_ENDPOINT}
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - KAFKA_BOOTSTRAP_SERVERS=${MSK_BOOTSTRAP_SERVERS}
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - SPRING_PROFILES_ACTIVE=aws
+    ports:
+      - "8081:8081"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - shoplite-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  catalog-service:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/shoplite-catalog:latest
+    container_name: shoplite-catalog
+    environment:
+      - SERVER_PORT=8082
+      - AUTH0_ISSUER_URI=${AUTH0_ISSUER_URI}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
+      - MONGO_HOST=${DOCUMENTDB_ENDPOINT}
+      - MONGO_PORT=27017
+      - MONGO_DATABASE=${MONGO_DATABASE}
+      - MONGO_USERNAME=${MONGO_USERNAME}
+      - MONGO_PASSWORD=${MONGO_PASSWORD}
+      - KAFKA_BOOTSTRAP_SERVERS=${MSK_BOOTSTRAP_SERVERS}
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - SPRING_PROFILES_ACTIVE=aws
+    ports:
+      - "8082:8082"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - shoplite-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  auth-service:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/shoplite-auth:latest
+    container_name: shoplite-auth
+    environment:
+      - SERVER_PORT=8083
+      - AUTH0_ISSUER_URI=${AUTH0_ISSUER_URI}
+      - AUTH0_AUDIENCE=${AUTH0_AUDIENCE}
+      - DB_HOST=${RDS_AUTH_ENDPOINT}
+      - DB_PORT=5432
+      - DB_NAME=${DB_AUTH_NAME}
+      - DB_USERNAME=${DB_AUTH_USERNAME}
+      - DB_PASSWORD=${DB_AUTH_PASSWORD}
+      - EUREKA_DEFAULT_ZONE=http://eureka-server:8761/eureka/
+      - JAEGER_ENDPOINT=${JAEGER_ENDPOINT}
+      - SPRING_PROFILES_ACTIVE=aws
+    ports:
+      - "8083:8083"
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - shoplite-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  frontend:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/shoplite-frontend:latest
+    container_name: shoplite-frontend
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - shoplite-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 64M
+
+  # ========================================
+  # OBSERVABILITY (Containerized for AWS)
+  # ========================================
+  
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    container_name: shoplite-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - SPAN_STORAGE_TYPE=memory
+      - LOG_LEVEL=info
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # HTTP collector
+      - "14250:14250"  # gRPC collector
+      - "9411:9411"    # Zipkin compatible endpoint
+    networks:
+      - shoplite-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
+
+  # ========================================
+  # DEVELOPMENT TOOLS (Optional for AWS)
+  # ========================================
+  
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: shoplite-kafka-ui
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=aws-msk
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=${MSK_BOOTSTRAP_SERVERS}
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=${MSK_ZOOKEEPER_CONNECT}
+    ports:
+      - "8085:8080"
+    networks:
+      - shoplite-network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.1'
+          memory: 256M
+        reservations:
+          cpus: '0.05'
+          memory: 128M
+
+networks:
+  shoplite-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ========================================
+# NOTES FOR AWS DEPLOYMENT:
+# ========================================
+# 
+# 1. Replace ${AWS_ACCOUNT_ID} and ${AWS_REGION} with actual values
+# 2. Use AWS Secrets Manager for sensitive environment variables
+# 3. RDS PostgreSQL and DocumentDB are managed services (not in this compose)
+# 4. MSK (Managed Kafka) is used instead of containerized Kafka
+# 5. Use ECS Fargate for container orchestration
+# 6. Use Application Load Balancer for external access
+# 7. Use CloudWatch for logging and monitoring
+#
+# Environment Variables Required:
+# - AWS_ACCOUNT_ID: Your AWS account ID
+# - AWS_REGION: AWS region (e.g., us-east-1)
+# - AUTH0_ISSUER_URI: Auth0 issuer URI
+# - AUTH0_AUDIENCE: Auth0 audience
+# - CORS_ALLOWED_ORIGINS: Allowed CORS origins
+# - RDS_ENDPOINT: RDS PostgreSQL endpoint for orders
+# - RDS_AUTH_ENDPOINT: RDS PostgreSQL endpoint for auth
+# - DOCUMENTDB_ENDPOINT: DocumentDB endpoint for catalog
+# - MSK_BOOTSTRAP_SERVERS: MSK bootstrap servers
+# - MSK_ZOOKEEPER_CONNECT: MSK Zookeeper connection
+# - JAEGER_ENDPOINT: Jaeger endpoint URL
+# - Database credentials (DB_USERNAME, DB_PASSWORD, etc.)

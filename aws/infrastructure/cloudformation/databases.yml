@@ -1,0 +1,289 @@
+# CloudFormation Template for Databases
+# This template creates RDS PostgreSQL and DocumentDB for ShopLite microservices
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Database infrastructure for ShopLite microservices deployment'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Environment name
+  
+  DBUsername:
+    Type: String
+    Default: shoplite
+    Description: Master username for RDS PostgreSQL
+    NoEcho: true
+  
+  DBPassword:
+    Type: String
+    Description: Master password for RDS PostgreSQL
+    NoEcho: true
+    MinLength: 8
+  
+  DocumentDBUsername:
+    Type: String
+    Default: shoplite
+    Description: Master username for DocumentDB
+    NoEcho: true
+  
+  DocumentDBPassword:
+    Type: String
+    Description: Master password for DocumentDB
+    NoEcho: true
+    MinLength: 8
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+  # ========================================
+  # RDS PostgreSQL for Orders and Auth
+  # ========================================
+  
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for ShopLite RDS
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: '${Environment}-shoplite-private-subnet-1-id'
+        - !ImportValue
+          Fn::Sub: '${Environment}-shoplite-private-subnet-2-id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-shoplite-db-subnet-group'
+        - Key: Environment
+          Value: !Ref Environment
+
+  OrdersDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${Environment}-shoplite-orders-db'
+      DBName: ordersdb
+      DBInstanceClass: !If [IsProd, db.t3.small, db.t3.micro]
+      Engine: postgres
+      EngineVersion: '16.1'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: !If [IsProd, 100, 20]
+      StorageType: gp2
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !ImportValue
+          Fn::Sub: '${Environment}-shoplite-rds-sg-id'
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: !If [IsProd, 7, 1]
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      MultiAZ: !If [IsProd, true, false]
+      PubliclyAccessible: false
+      DeletionProtection: !If [IsProd, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-shoplite-orders-db'
+        - Key: Environment
+          Value: !Ref Environment
+
+  AuthDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${Environment}-shoplite-auth-db'
+      DBName: shoplite_auth
+      DBInstanceClass: !If [IsProd, db.t3.small, db.t3.micro]
+      Engine: postgres
+      EngineVersion: '16.1'
+      MasterUsername: !Ref DBUsername
+      MasterUserPassword: !Ref DBPassword
+      AllocatedStorage: !If [IsProd, 100, 20]
+      StorageType: gp2
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !ImportValue
+          Fn::Sub: '${Environment}-shoplite-rds-sg-id'
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: !If [IsProd, 7, 1]
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      MultiAZ: !If [IsProd, true, false]
+      PubliclyAccessible: false
+      DeletionProtection: !If [IsProd, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-shoplite-auth-db'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ========================================
+  # DocumentDB for Catalog Service
+  # ========================================
+  
+  DocumentDBSubnetGroup:
+    Type: AWS::DocDB::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for ShopLite DocumentDB
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: '${Environment}-shoplite-private-subnet-1-id'
+        - !ImportValue
+          Fn::Sub: '${Environment}-shoplite-private-subnet-2-id'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-shoplite-documentdb-subnet-group'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DocumentDBCluster:
+    Type: AWS::DocDB::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub '${Environment}-shoplite-documentdb-cluster'
+      MasterUsername: !Ref DocumentDBUsername
+      MasterUserPassword: !Ref DocumentDBPassword
+      DBSubnetGroupName: !Ref DocumentDBSubnetGroup
+      VpcSecurityGroupIds:
+        - !ImportValue
+          Fn::Sub: '${Environment}-shoplite-documentdb-sg-id'
+      BackupRetentionPeriod: !If [IsProd, 7, 1]
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      StorageEncrypted: true
+      DeletionProtection: !If [IsProd, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-shoplite-documentdb-cluster'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DocumentDBInstance:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${Environment}-shoplite-documentdb-instance'
+      DBClusterIdentifier: !Ref DocumentDBCluster
+      DBInstanceClass: !If [IsProd, db.t3.medium, db.t3.medium]
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-shoplite-documentdb-instance'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # ========================================
+  # MSK (Managed Kafka)
+  # ========================================
+  
+  MSKCluster:
+    Type: AWS::MSK::Cluster
+    Properties:
+      ClusterName: !Sub '${Environment}-shoplite-msk-cluster'
+      KafkaVersion: '3.5.1'
+      NumberOfBrokerNodes: !If [IsProd, 3, 2]
+      BrokerNodeGroupInfo:
+        InstanceType: !If [IsProd, kafka.m5.large, kafka.t3.small]
+        ClientSubnets:
+          - !ImportValue
+            Fn::Sub: '${Environment}-shoplite-private-subnet-1-id'
+          - !ImportValue
+            Fn::Sub: '${Environment}-shoplite-private-subnet-2-id'
+        SecurityGroups:
+          - !ImportValue
+            Fn::Sub: '${Environment}-shoplite-msk-sg-id'
+        StorageInfo:
+          EBSStorageInfo:
+            VolumeSize: !If [IsProd, 100, 20]
+      EncryptionInfo:
+        EncryptionInTransit:
+          ClientBroker: TLS
+          InCluster: true
+        EncryptionAtRest:
+          DataVolumeKMSKeyId: !Ref MSKKMSKey
+      LoggingInfo:
+        BrokerLogs:
+          CloudWatchLogs:
+            Enabled: true
+            LogGroup: !Ref MSKLogGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-shoplite-msk-cluster'
+        - Key: Environment
+          Value: !Ref Environment
+
+  MSKKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for MSK encryption
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-shoplite-msk-kms-key'
+        - Key: Environment
+          Value: !Ref Environment
+
+  MSKKMSKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${Environment}-shoplite-msk'
+      TargetKeyId: !Ref MSKKMSKey
+
+  MSKLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/msk/${Environment}-shoplite'
+      RetentionInDays: !If [IsProd, 30, 7]
+
+Outputs:
+  OrdersDBEndpoint:
+    Description: RDS PostgreSQL endpoint for orders
+    Value: !GetAtt OrdersDB.Endpoint.Address
+    Export:
+      Name: !Sub '${Environment}-shoplite-orders-db-endpoint'
+
+  OrdersDBPort:
+    Description: RDS PostgreSQL port for orders
+    Value: !GetAtt OrdersDB.Endpoint.Port
+    Export:
+      Name: !Sub '${Environment}-shoplite-orders-db-port'
+
+  AuthDBEndpoint:
+    Description: RDS PostgreSQL endpoint for auth
+    Value: !GetAtt AuthDB.Endpoint.Address
+    Export:
+      Name: !Sub '${Environment}-shoplite-auth-db-endpoint'
+
+  AuthDBPort:
+    Description: RDS PostgreSQL port for auth
+    Value: !GetAtt AuthDB.Endpoint.Port
+    Export:
+      Name: !Sub '${Environment}-shoplite-auth-db-port'
+
+  DocumentDBEndpoint:
+    Description: DocumentDB cluster endpoint
+    Value: !GetAtt DocumentDBCluster.Endpoint
+    Export:
+      Name: !Sub '${Environment}-shoplite-documentdb-endpoint'
+
+  DocumentDBPort:
+    Description: DocumentDB port
+    Value: !GetAtt DocumentDBCluster.Port
+    Export:
+      Name: !Sub '${Environment}-shoplite-documentdb-port'
+
+  MSKBootstrapServers:
+    Description: MSK bootstrap servers
+    Value: !Join [',', !GetAtt MSKCluster.BootstrapBrokerStringTls]
+    Export:
+      Name: !Sub '${Environment}-shoplite-msk-bootstrap-servers'
+
+  MSKZookeeperConnect:
+    Description: MSK Zookeeper connection string
+    Value: !GetAtt MSKCluster.ZookeeperConnectString
+    Export:
+      Name: !Sub '${Environment}-shoplite-msk-zookeeper-connect'
