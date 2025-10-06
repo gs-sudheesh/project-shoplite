@@ -1,4 +1,4 @@
-# Actual GitHub Branch Protection Setup
+# Actual GitHub Branch Protection Setup 
 
 ## 🎯 What's Actually Available in GitHub UI
 
