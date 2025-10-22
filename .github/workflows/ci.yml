@@ -196,7 +196,24 @@ jobs:
           if [ "${{ needs.build-and-test.outputs.success }}" != "true" ]; then
             echo "❌ Build failed - PR cannot be merged"
             echo "Please fix the build issues before merging"
+            echo ""
+            echo "🚫 MERGE BLOCKED: This PR cannot be merged until build issues are resolved"
             exit 1
           else
             echo "✅ Build passed - PR is ready for merge"
+            echo ""
+            echo "✅ MERGE ALLOWED: All quality checks have passed"
           fi
+      
+      - name: Update PR status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ needs.build-and-test.outputs.success }}' === 'true' ? 'success' : 'failure';
+            const message = status === 'success' 
+              ? '✅ All quality checks passed - PR ready for merge'
+              : '❌ Quality checks failed - PR cannot be merged';
+            
+            console.log(`Quality Gate Status: ${status}`);
+            console.log(`Message: ${message}`);
