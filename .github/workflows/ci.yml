@@ -36,6 +36,9 @@ jobs:
   build-and-test:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      status: ${{ job.status }}
+      success: ${{ job.status == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -181,3 +184,19 @@ jobs:
               console.log('Failed to comment on PR:', error.message);
               console.log('This is not critical - the build status will still be visible in the PR checks');
             }
+
+  # Job 3: Quality Gate (fails if build doesn't pass)
+  quality-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - name: Check build status
+        run: |
+          if [ "${{ needs.build-and-test.outputs.success }}" != "true" ]; then
+            echo "❌ Build failed - PR cannot be merged"
+            echo "Please fix the build issues before merging"
+            exit 1
+          else
+            echo "✅ Build passed - PR is ready for merge"
+          fi
