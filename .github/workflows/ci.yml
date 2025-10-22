@@ -205,15 +205,72 @@ jobs:
             echo "✅ MERGE ALLOWED: All quality checks have passed"
           fi
       
-      - name: Update PR status
+      - name: Update PR with Quality Status
         if: always()
         uses: actions/github-script@v7
         with:
           script: |
-            const status = '${{ needs.build-and-test.outputs.success }}' === 'true' ? 'success' : 'failure';
-            const message = status === 'success' 
-              ? '✅ All quality checks passed - PR ready for merge'
-              : '❌ Quality checks failed - PR cannot be merged';
+            const buildSuccess = '${{ needs.build-and-test.outputs.success }}' === 'true';
+            const status = buildSuccess ? 'success' : 'failure';
             
-            console.log(`Quality Gate Status: ${status}`);
-            console.log(`Message: ${message}`);
+            const comment = buildSuccess ? `
+            ## ✅ Quality Gate: PASSED
+            
+            **Status**: All quality checks have passed successfully
+            **Build**: ✅ Successful
+            **Tests**: ✅ Passed
+            **Security**: ✅ Scanned
+            
+            🎉 **This PR is ready for merge!**
+            
+            ---
+            *Quality gate completed at ${new Date().toISOString()}*
+            ` : `
+            ## ❌ Quality Gate: FAILED
+            
+            **Status**: Quality checks have failed
+            **Build**: ❌ Failed
+            **Tests**: ❌ Failed
+            **Security**: ❌ Issues found
+            
+            🚫 **This PR should NOT be merged until issues are resolved!**
+            
+            ### Required Actions:
+            1. Review the build logs above
+            2. Fix any failing tests or build issues
+            3. Address security concerns if any
+            4. Push new commits to re-run quality checks
+            
+            ---
+            *Quality gate failed at ${new Date().toISOString()}*
+            `;
+            
+            // Find and update existing quality gate comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const qualityGateComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Quality Gate:')
+            );
+            
+            if (qualityGateComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: qualityGateComment.id,
+                body: comment
+              });
+              console.log('Updated existing quality gate comment');
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+              console.log('Created new quality gate comment');
+            }
