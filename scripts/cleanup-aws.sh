@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 ENVIRONMENT=${ENVIRONMENT:-dev}
-AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_REGION=${AWS_REGION:-ap-southeast-2}
 
 # Colors for output
 RED='\033[0;31m'
