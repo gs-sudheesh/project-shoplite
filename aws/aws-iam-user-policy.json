@@ -24,6 +24,14 @@
             ]
         },
         {
+            "Sid": "ECRGetAuthorizationToken",
+            "Effect": "Allow",
+            "Action": [
+                "ecr:GetAuthorizationToken"
+            ],
+            "Resource": "*"
+        },
+        {
             "Sid": "ECSFullAccess",
             "Effect": "Allow",
             "Action": [
