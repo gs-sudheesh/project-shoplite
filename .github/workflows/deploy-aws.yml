@@ -1,0 +1,171 @@
+# GitHub Actions Workflow Template for AWS Deployment
+# Copy this file to .github/workflows/deploy-aws.yml and configure secrets
+
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Create environment file from secrets
+      run: |
+        cat > aws/environment/${{ github.event.inputs.environment || 'dev' }}.env << EOF
+        # AWS Configuration
+        AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
+        AWS_REGION=${{ env.AWS_REGION }}
+        ENVIRONMENT=${{ github.event.inputs.environment || 'dev' }}
+        
+        # Auth0 Configuration
+        AUTH0_ISSUER_URI=${{ secrets.AUTH0_ISSUER_URI }}
+        AUTH0_AUDIENCE=${{ secrets.AUTH0_AUDIENCE }}
+        
+        # CORS Configuration
+        CORS_ALLOWED_ORIGINS=${{ secrets.CORS_ALLOWED_ORIGINS }}
+        
+        # Database Configuration
+        DB_USERNAME=${{ secrets.DB_USERNAME }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+        DOCUMENTDB_USERNAME=${{ secrets.DOCUMENTDB_USERNAME }}
+        DOCUMENTDB_PASSWORD=${{ secrets.DOCUMENTDB_PASSWORD }}
+        
+        # ECR Repository URLs
+        ECR_REGISTRY=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        ECR_EUREKA_IMAGE=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/shoplite-eureka:latest
+        ECR_API_GATEWAY_IMAGE=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/shoplite-api-gateway:latest
+        ECR_ORDER_IMAGE=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/shoplite-order:latest
+        ECR_CATALOG_IMAGE=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/shoplite-catalog:latest
+        ECR_AUTH_IMAGE=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/shoplite-auth:latest
+        ECR_FRONTEND_IMAGE=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/shoplite-frontend:latest
+        
+        # Service Discovery
+        SERVICE_DISCOVERY_NAMESPACE=${{ github.event.inputs.environment || 'dev' }}-shoplite.local
+        
+        # Jaeger Configuration
+        JAEGER_ENDPOINT=http://jaeger.${{ github.event.inputs.environment || 'dev' }}-shoplite.local:9411/api/v2/spans
+        
+        # Load Balancer Configuration
+        ALB_DNS_NAME=${{ secrets.ALB_DNS_NAME }}
+        ALB_URL=http://${{ secrets.ALB_DNS_NAME }}
+        
+        # Application URLs
+        FRONTEND_URL=http://${{ secrets.ALB_DNS_NAME }}
+        API_GATEWAY_URL=http://${{ secrets.ALB_DNS_NAME }}/api
+        JAEGER_UI_URL=http://${{ secrets.ALB_DNS_NAME }}:16686
+        
+        # Monitoring and Logging
+        CLOUDWATCH_LOG_GROUP=/ecs/${{ github.event.inputs.environment || 'dev' }}-shoplite
+        CLOUDWATCH_LOG_REGION=${{ env.AWS_REGION }}
+        
+        # Cost Optimization
+        ECS_CAPACITY_PROVIDER=${{ secrets.ECS_CAPACITY_PROVIDER }}
+        ECS_CPU=${{ secrets.ECS_CPU }}
+        ECS_MEMORY=${{ secrets.ECS_MEMORY }}
+        
+        # Security
+        ENABLE_ENCRYPTION=${{ secrets.ENABLE_ENCRYPTION }}
+        ENABLE_SSL=${{ secrets.ENABLE_SSL }}
+        
+        # Backup and Retention
+        BACKUP_RETENTION_DAYS=${{ secrets.BACKUP_RETENTION_DAYS }}
+        LOG_RETENTION_DAYS=${{ secrets.LOG_RETENTION_DAYS }}
+        EOF
+
+    - name: Debug directory structure
+      run: |
+        echo "Current working directory: $(pwd)"
+        echo "Contents of current directory:"
+        ls -la
+        echo "Contents of scripts directory:"
+        ls -la scripts/ || echo "Scripts directory not found"
+        echo "Checking script permissions:"
+        ls -la scripts/*.sh || echo "No .sh files found in scripts directory"
+
+    - name: Build Docker images
+      run: |
+        # Check if script exists and is executable
+        if [ ! -f "scripts/build-images.sh" ]; then
+          echo "❌ Error: scripts/build-images.sh not found"
+          exit 1
+        fi
+        
+        # Make sure it's executable
+        chmod +x scripts/build-images.sh
+        
+        # Run the script
+        echo "🚀 Starting Docker image build..."
+        ./scripts/build-images.sh
+
+    - name: Setup ECR repositories
+      run: |
+        # Check if script exists
+        if [ ! -f "scripts/setup-ecr.sh" ]; then
+          echo "❌ Error: scripts/setup-ecr.sh not found"
+          exit 1
+        fi
+        
+        # Make executable and run
+        chmod +x scripts/setup-ecr.sh
+        echo "🚀 Setting up ECR repositories..."
+        ./scripts/setup-ecr.sh
+
+    - name: Deploy to AWS
+      run: |
+        # Check if script exists
+        if [ ! -f "scripts/deploy-aws.sh" ]; then
+          echo "❌ Error: scripts/deploy-aws.sh not found"
+          exit 1
+        fi
+        
+        # Make executable and run
+        chmod +x scripts/deploy-aws.sh
+        echo "🚀 Deploying to AWS..."
+        ./scripts/deploy-aws.sh
+
+    - name: Cleanup environment file
+      if: always()
+      run: |
+        rm -f aws/environment/${{ github.event.inputs.environment || 'dev' }}.env
+
+  test-deployment:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Test API endpoints
+      run: |
+        # Add your API tests here
+        echo "Testing API endpoints..."
+        # curl -f ${{ secrets.ALB_DNS_NAME }}/api/health || exit 1
