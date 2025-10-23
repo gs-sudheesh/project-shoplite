@@ -25,8 +25,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy nginx configuration
 COPY frontend/nginx.conf /etc/nginx/nginx.conf
 
-# Create non-root user (nginx group already exists in alpine)
-RUN adduser -S -D -H -u 1001 -h /var/cache/nginx -s /sbin/nologin -G nginx nginx
+# Use existing nginx user (already exists in alpine nginx image)
 
 # Set proper permissions
 RUN chown -R nginx:nginx /usr/share/nginx/html && \

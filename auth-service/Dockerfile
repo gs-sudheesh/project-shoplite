@@ -23,7 +23,7 @@ RUN ./gradlew :auth-service:build -x test
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
 # Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache curl
 
 # Create non-root user
 RUN addgroup --system spring && adduser --system spring --ingroup spring
