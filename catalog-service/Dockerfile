@@ -1,5 +1,5 @@
 # Multi-stage build for Catalog Service
-FROM eclipse-temurin:21-jdk-slim AS builder
+FROM eclipse-temurin:21-jdk-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -20,7 +20,7 @@ RUN chmod +x gradlew
 RUN ./gradlew :catalog-service:build -x test
 
 # Runtime stage
-FROM eclipse-temurin:21-jre-slim AS runtime
+FROM eclipse-temurin:21-jre-alpine AS runtime
 
 # Install curl for health checks
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
