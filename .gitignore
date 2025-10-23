@@ -72,9 +72,12 @@ aws/environment/*.env
 # Docker
 .dockerignore
 
-# Shell scripts (as requested)
-*.sh
-scripts/
+# Shell scripts (as requested) - but allow deployment scripts
+# *.sh
+# scripts/
+# Allow deployment scripts
+!scripts/*.sh
+!scripts/
 
 # Temporary files
 tmp/
