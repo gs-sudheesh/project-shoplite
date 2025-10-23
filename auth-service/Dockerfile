@@ -1,5 +1,5 @@
 # Multi-stage build for Auth Service
-FROM openjdk:21-jdk-slim AS builder
+FROM eclipse-temurin:21-jdk-alpine AS builder
 
 # Set working directory
 WORKDIR /app
@@ -20,10 +20,10 @@ RUN chmod +x gradlew
 RUN ./gradlew :auth-service:build -x test
 
 # Runtime stage
-FROM openjdk:21-jre-slim AS runtime
+FROM eclipse-temurin:21-jre-alpine AS runtime
 
 # Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache curl
 
 # Create non-root user
 RUN addgroup --system spring && adduser --system spring --ingroup spring

@@ -161,7 +161,7 @@ Resources:
       TaskRoleArn: !Ref ECSTaskRole
       ContainerDefinitions:
         - Name: eureka-server
-          Image: !Sub '${AWSAccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/shoplite-eureka:latest'
+          Image: !Sub '${AWSAccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/shoplite-eureka-server:latest'
           PortMappings:
             - ContainerPort: 8761
               Protocol: tcp
@@ -247,7 +247,7 @@ Resources:
       TaskRoleArn: !Ref ECSTaskRole
       ContainerDefinitions:
         - Name: order-service
-          Image: !Sub '${AWSAccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/shoplite-order:latest'
+          Image: !Sub '${AWSAccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/shoplite-order-service:latest'
           PortMappings:
             - ContainerPort: 8081
               Protocol: tcp
@@ -307,7 +307,7 @@ Resources:
       TaskRoleArn: !Ref ECSTaskRole
       ContainerDefinitions:
         - Name: catalog-service
-          Image: !Sub '${AWSAccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/shoplite-catalog:latest'
+          Image: !Sub '${AWSAccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/shoplite-catalog-service:latest'
           PortMappings:
             - ContainerPort: 8082
               Protocol: tcp
@@ -367,7 +367,7 @@ Resources:
       TaskRoleArn: !Ref ECSTaskRole
       ContainerDefinitions:
         - Name: auth-service
-          Image: !Sub '${AWSAccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/shoplite-auth:latest'
+          Image: !Sub '${AWSAccountId}.dkr.ecr.${AWSRegion}.amazonaws.com/shoplite-auth-service:latest'
           PortMappings:
             - ContainerPort: 8083
               Protocol: tcp
