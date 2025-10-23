@@ -86,7 +86,6 @@
                 "logs:*"
             ],
             "Resource": [
-                "arn:aws:logs:ap-southeast-2:*:log-group:*shoplite*",
                 "arn:aws:logs:ap-southeast-2:*:log-group:/ecs/*shoplite*",
                 "arn:aws:logs:ap-southeast-2:*:log-group:/aws/msk/*shoplite*"
             ]
