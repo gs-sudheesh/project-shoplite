@@ -4,6 +4,10 @@
 name: Deploy to AWS
 
 on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       environment:
@@ -15,11 +19,6 @@ on:
         - dev
         - staging
         - prod
-      branch:
-        description: 'Branch to deploy from'
-        required: true
-        default: 'develop'
-        type: string
 
 env:
   AWS_REGION: us-east-1
@@ -28,13 +27,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
-    if: github.event_name == 'workflow_dispatch'
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        ref: ${{ github.event.inputs.branch || 'develop' }}
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -106,55 +102,19 @@ jobs:
         LOG_RETENTION_DAYS=${{ secrets.LOG_RETENTION_DAYS }}
         EOF
 
-    - name: Debug directory structure
-      run: |
-        echo "Current working directory: $(pwd)"
-        echo "Contents of current directory:"
-        ls -la
-        echo "Contents of scripts directory:"
-        ls -la scripts/ || echo "Scripts directory not found"
-        echo "Checking script permissions:"
-        ls -la scripts/*.sh || echo "No .sh files found in scripts directory"
-
     - name: Build Docker images
       run: |
-        # Check if script exists and is executable
-        if [ ! -f "scripts/build-images.sh" ]; then
-          echo "❌ Error: scripts/build-images.sh not found"
-          exit 1
-        fi
-        
-        # Make sure it's executable
         chmod +x scripts/build-images.sh
-        
-        # Run the script
-        echo "🚀 Starting Docker image build..."
         ./scripts/build-images.sh
 
     - name: Setup ECR repositories
       run: |
-        # Check if script exists
-        if [ ! -f "scripts/setup-ecr.sh" ]; then
-          echo "❌ Error: scripts/setup-ecr.sh not found"
-          exit 1
-        fi
-        
-        # Make executable and run
         chmod +x scripts/setup-ecr.sh
-        echo "🚀 Setting up ECR repositories..."
         ./scripts/setup-ecr.sh
 
     - name: Deploy to AWS
       run: |
-        # Check if script exists
-        if [ ! -f "scripts/deploy-aws.sh" ]; then
-          echo "❌ Error: scripts/deploy-aws.sh not found"
-          exit 1
-        fi
-        
-        # Make executable and run
         chmod +x scripts/deploy-aws.sh
-        echo "🚀 Deploying to AWS..."
         ./scripts/deploy-aws.sh
 
     - name: Cleanup environment file
