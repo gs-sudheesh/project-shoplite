@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 ENVIRONMENT=${ENVIRONMENT:-dev}
-AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_REGION=${AWS_REGION:-ap-southeast-2}
 
 # Colors for output
 RED='\033[0;31m'
@@ -50,11 +50,11 @@ delete_ecr_repositories() {
     echo -e "${YELLOW}🗑️  Deleting ECR repositories...${NC}"
     
     local repositories=(
-        "shoplite-eureka"
+        "shoplite-eureka-server"
         "shoplite-api-gateway"
-        "shoplite-order"
-        "shoplite-catalog"
-        "shoplite-auth"
+        "shoplite-order-service"
+        "shoplite-catalog-service"
+        "shoplite-auth-service"
         "shoplite-frontend"
     )
     
@@ -167,11 +167,11 @@ show_preview() {
     echo ""
     echo -e "${YELLOW}ECR Repositories:${NC}"
     local repositories=(
-        "shoplite-eureka"
+        "shoplite-eureka-server"
         "shoplite-api-gateway"
-        "shoplite-order"
-        "shoplite-catalog"
-        "shoplite-auth"
+        "shoplite-order-service"
+        "shoplite-catalog-service"
+        "shoplite-auth-service"
         "shoplite-frontend"
     )
     

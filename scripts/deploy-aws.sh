@@ -5,9 +5,12 @@
 
 set -e
 
+# Track deployed stacks for cleanup on failure
+DEPLOYED_STACKS=()
+
 # Configuration
 ENVIRONMENT=${ENVIRONMENT:-dev}
-AWS_REGION=${AWS_REGION:-us-east-1}
+AWS_REGION=${AWS_REGION:-ap-southeast-2}
 AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}
 
 # Load environment variables from template
@@ -72,6 +75,9 @@ deploy_stack() {
     fi
     
     echo -e "${GREEN}✅ Stack ${stack_name} deployed successfully${NC}"
+    
+    # Add to deployed stacks list for cleanup tracking
+    DEPLOYED_STACKS+=("$stack_name")
 }
 
 # Function to get stack outputs
@@ -85,6 +91,29 @@ get_stack_output() {
         --query "Stacks[0].Outputs[?OutputKey=='$output_key'].OutputValue" \
         --output text
 }
+
+# Function to cleanup on failure
+cleanup_on_failure() {
+    echo -e "${RED}❌ Deployment failed! Starting cleanup...${NC}"
+    echo -e "${YELLOW}🧹 Cleaning up deployed stacks...${NC}"
+    
+    # Delete stacks in reverse order (dependencies first)
+    for ((i=${#DEPLOYED_STACKS[@]}-1; i>=0; i--)); do
+        local stack_name="${DEPLOYED_STACKS[i]}"
+        echo -e "${YELLOW}🗑️  Deleting stack: ${stack_name}${NC}"
+        
+        if aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" >/dev/null 2>&1; then
+            aws cloudformation delete-stack --stack-name "$stack_name" --region "$AWS_REGION" || true
+            echo -e "${BLUE}Stack ${stack_name} deletion initiated${NC}"
+        fi
+    done
+    
+    echo -e "${YELLOW}⚠️  Cleanup initiated. Check AWS Console to verify all resources are removed.${NC}"
+    echo -e "${YELLOW}   You can also run './scripts/cleanup-aws.sh' to ensure complete cleanup.${NC}"
+}
+
+# Set up error trap
+trap cleanup_on_failure ERR
 
 # Main deployment function
 main() {
