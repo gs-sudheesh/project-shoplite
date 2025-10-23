@@ -50,11 +50,11 @@ delete_ecr_repositories() {
     echo -e "${YELLOW}🗑️  Deleting ECR repositories...${NC}"
     
     local repositories=(
-        "shoplite-eureka"
+        "shoplite-eureka-server"
         "shoplite-api-gateway"
-        "shoplite-order"
-        "shoplite-catalog"
-        "shoplite-auth"
+        "shoplite-order-service"
+        "shoplite-catalog-service"
+        "shoplite-auth-service"
         "shoplite-frontend"
     )
     
@@ -167,11 +167,11 @@ show_preview() {
     echo ""
     echo -e "${YELLOW}ECR Repositories:${NC}"
     local repositories=(
-        "shoplite-eureka"
+        "shoplite-eureka-server"
         "shoplite-api-gateway"
-        "shoplite-order"
-        "shoplite-catalog"
-        "shoplite-auth"
+        "shoplite-order-service"
+        "shoplite-catalog-service"
+        "shoplite-auth-service"
         "shoplite-frontend"
     )
     
