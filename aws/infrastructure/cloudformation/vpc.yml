@@ -13,7 +13,7 @@ Parameters:
   
   AvailabilityZones:
     Type: CommaDelimitedList
-    Default: us-east-1a,us-east-1b
+    Default: ap-southeast-2a,ap-southeast-2b
     Description: Availability zones for the VPC
 
 Resources:
@@ -238,8 +238,8 @@ Resources:
         - IpProtocol: tcp
           FromPort: 8761
           ToPort: 8761
-          SourceSecurityGroupId: !Ref ECSSecurityGroup
-          Description: Eureka server communication
+          CidrIp: 10.0.0.0/16
+          Description: Eureka server communication within VPC
       Tags:
         - Key: Name
           Value: !Sub '${Environment}-shoplite-ecs-sg'
