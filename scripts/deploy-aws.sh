@@ -41,8 +41,7 @@ echo ""
 deploy_stack() {
     local stack_name=$1
     local template_file=$2
-    shift 2
-    local parameters=("$@")
+    local parameters=$3
     
     echo -e "${YELLOW}📦 Deploying stack: ${stack_name}${NC}"
     
@@ -77,7 +76,7 @@ deploy_stack() {
         aws cloudformation update-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
-            --parameters "${parameters[@]}" \
+            --parameters "$parameters" \
             --capabilities CAPABILITY_IAM \
             --region "$AWS_REGION"
         
@@ -90,7 +89,7 @@ deploy_stack() {
         aws cloudformation create-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
-            --parameters "${parameters[@]}" \
+            --parameters "$parameters" \
             --capabilities CAPABILITY_IAM \
             --region "$AWS_REGION"
         
@@ -106,7 +105,9 @@ deploy_stack() {
                 echo -e "${YELLOW}🔍 Checking stack status...${NC}"
                 aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text
                 echo -e "${YELLOW}📋 Recent stack events:${NC}"
-                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[0:5].[Timestamp,ResourceStatus,ResourceStatusReason]' --output table
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[0:10].[Timestamp,ResourceStatus,ResourceStatusReason,LogicalResourceId]' --output table
+                echo -e "${YELLOW}🔍 Looking for CREATE_FAILED events:${NC}"
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[Timestamp,LogicalResourceId,ResourceStatusReason]' --output table
                 exit 1
             }
         else
@@ -116,6 +117,10 @@ deploy_stack() {
                 echo -e "${RED}❌ Stack creation failed${NC}"
                 echo -e "${YELLOW}🔍 Checking stack status...${NC}"
                 aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text
+                echo -e "${YELLOW}📋 Recent stack events:${NC}"
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[0:10].[Timestamp,ResourceStatus,ResourceStatusReason,LogicalResourceId]' --output table
+                echo -e "${YELLOW}🔍 Looking for CREATE_FAILED events:${NC}"
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[Timestamp,LogicalResourceId,ResourceStatusReason]' --output table
                 exit 1
             }
         fi
@@ -176,26 +181,13 @@ main() {
     deploy_stack \
         "${ENVIRONMENT}-shoplite-databases" \
         "aws/infrastructure/cloudformation/databases.yml" \
-        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT}" \
-        "ParameterKey=DBUsername,ParameterValue=${DB_USERNAME}" \
-        "ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD}" \
-        "ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME}" \
-        "ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
+        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT} ParameterKey=DBUsername,ParameterValue=${DB_USERNAME} ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD} ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME} ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
     
     # 3. Deploy ECS infrastructure
     deploy_stack \
         "${ENVIRONMENT}-shoplite-ecs" \
         "aws/infrastructure/cloudformation/ecs.yml" \
-        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT}" \
-        "ParameterKey=AWSAccountId,ParameterValue=${AWS_ACCOUNT_ID}" \
-        "ParameterKey=AWSRegion,ParameterValue=${AWS_REGION}" \
-        "ParameterKey=Auth0IssuerURI,ParameterValue=${AUTH0_ISSUER_URI}" \
-        "ParameterKey=Auth0Audience,ParameterValue=${AUTH0_AUDIENCE}" \
-        "ParameterKey=CORSAllowedOrigins,ParameterValue=${CORS_ALLOWED_ORIGINS}" \
-        "ParameterKey=DBUsername,ParameterValue=${DB_USERNAME}" \
-        "ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD}" \
-        "ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME}" \
-        "ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
+        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT} ParameterKey=AWSAccountId,ParameterValue=${AWS_ACCOUNT_ID} ParameterKey=AWSRegion,ParameterValue=${AWS_REGION} ParameterKey=Auth0IssuerURI,ParameterValue=${AUTH0_ISSUER_URI} ParameterKey=Auth0Audience,ParameterValue=${AUTH0_AUDIENCE} ParameterKey=CORSAllowedOrigins,ParameterValue=${CORS_ALLOWED_ORIGINS} ParameterKey=DBUsername,ParameterValue=${DB_USERNAME} ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD} ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME} ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
     
     echo ""
     echo -e "${GREEN}🎉 Infrastructure deployment completed successfully!${NC}"
