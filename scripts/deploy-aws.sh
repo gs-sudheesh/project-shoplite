@@ -46,7 +46,32 @@ deploy_stack() {
     
     echo -e "${YELLOW}📦 Deploying stack: ${stack_name}${NC}"
     
-    # Check if stack exists
+    # Validate CloudFormation template first
+    echo -e "${BLUE}🔍 Validating CloudFormation template: ${template_file}${NC}"
+    if ! aws cloudformation validate-template --template-body "file://$template_file" --region "$AWS_REGION" >/dev/null 2>&1; then
+        echo -e "${RED}❌ CloudFormation template validation failed for ${template_file}${NC}"
+        echo -e "${YELLOW}📋 Validation errors:${NC}"
+        aws cloudformation validate-template --template-body "file://$template_file" --region "$AWS_REGION"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ CloudFormation template validation passed${NC}"
+    
+    # Check if stack exists and clean up if in failed state
+    if aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" >/dev/null 2>&1; then
+        local stack_status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text)
+        echo -e "${BLUE}Stack ${stack_name} exists with status: ${stack_status}${NC}"
+        
+        # If stack is in failed state, delete it first
+        if [[ "$stack_status" == "ROLLBACK_COMPLETE" || "$stack_status" == "CREATE_FAILED" || "$stack_status" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            echo -e "${YELLOW}🗑️  Deleting failed stack ${stack_name}...${NC}"
+            aws cloudformation delete-stack --stack-name "$stack_name" --region "$AWS_REGION"
+            echo -e "${BLUE}Waiting for stack deletion to complete...${NC}"
+            aws cloudformation wait stack-delete-complete --stack-name "$stack_name" --region "$AWS_REGION"
+            echo -e "${GREEN}✅ Failed stack ${stack_name} deleted successfully${NC}"
+        fi
+    fi
+    
+    # Check if stack exists again (after potential cleanup)
     if aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" >/dev/null 2>&1; then
         echo -e "${BLUE}Stack ${stack_name} exists, updating...${NC}"
         aws cloudformation update-stack \
