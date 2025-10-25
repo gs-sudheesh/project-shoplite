@@ -41,7 +41,8 @@ echo ""
 deploy_stack() {
     local stack_name=$1
     local template_file=$2
-    local parameters=$3
+    shift 2
+    local parameters=("$@")
     
     echo -e "${YELLOW}📦 Deploying stack: ${stack_name}${NC}"
     
@@ -76,7 +77,7 @@ deploy_stack() {
         aws cloudformation update-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
-            --parameters "$parameters" \
+            $(printf ' --parameters "%s"' "${parameters[@]}") \
             --capabilities CAPABILITY_IAM \
             --region "$AWS_REGION"
         
@@ -89,7 +90,7 @@ deploy_stack() {
         aws cloudformation create-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
-            --parameters "$parameters" \
+            $(printf ' --parameters "%s"' "${parameters[@]}") \
             --capabilities CAPABILITY_IAM \
             --region "$AWS_REGION"
         
@@ -181,13 +182,26 @@ main() {
     deploy_stack \
         "${ENVIRONMENT}-shoplite-databases" \
         "aws/infrastructure/cloudformation/databases.yml" \
-        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT} ParameterKey=DBUsername,ParameterValue=${DB_USERNAME} ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD} ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME} ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
+        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT}" \
+        "ParameterKey=DBUsername,ParameterValue=${DB_USERNAME}" \
+        "ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD}" \
+        "ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME}" \
+        "ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
     
     # 3. Deploy ECS infrastructure
     deploy_stack \
         "${ENVIRONMENT}-shoplite-ecs" \
         "aws/infrastructure/cloudformation/ecs.yml" \
-        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT} ParameterKey=AWSAccountId,ParameterValue=${AWS_ACCOUNT_ID} ParameterKey=AWSRegion,ParameterValue=${AWS_REGION} ParameterKey=Auth0IssuerURI,ParameterValue=${AUTH0_ISSUER_URI} ParameterKey=Auth0Audience,ParameterValue=${AUTH0_AUDIENCE} ParameterKey=CORSAllowedOrigins,ParameterValue=${CORS_ALLOWED_ORIGINS} ParameterKey=DBUsername,ParameterValue=${DB_USERNAME} ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD} ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME} ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
+        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT}" \
+        "ParameterKey=AWSAccountId,ParameterValue=${AWS_ACCOUNT_ID}" \
+        "ParameterKey=AWSRegion,ParameterValue=${AWS_REGION}" \
+        "ParameterKey=Auth0IssuerURI,ParameterValue=${AUTH0_ISSUER_URI}" \
+        "ParameterKey=Auth0Audience,ParameterValue=${AUTH0_AUDIENCE}" \
+        "ParameterKey=CORSAllowedOrigins,ParameterValue=${CORS_ALLOWED_ORIGINS}" \
+        "ParameterKey=DBUsername,ParameterValue=${DB_USERNAME}" \
+        "ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD}" \
+        "ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME}" \
+        "ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
     
     echo ""
     echo -e "${GREEN}🎉 Infrastructure deployment completed successfully!${NC}"
