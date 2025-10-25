@@ -70,9 +70,30 @@ deploy_stack() {
             --region "$AWS_REGION"
         
         echo -e "${BLUE}Waiting for stack creation to complete...${NC}"
-        aws cloudformation wait stack-create-complete \
-            --stack-name "$stack_name" \
-            --region "$AWS_REGION"
+        echo -e "${YELLOW}⏳ This may take 10-15 minutes for database stacks...${NC}"
+        
+        # Add timeout for database stacks (20 minutes)
+        if [[ "$stack_name" == *"databases"* ]]; then
+            timeout 1200 aws cloudformation wait stack-create-complete \
+                --stack-name "$stack_name" \
+                --region "$AWS_REGION" || {
+                echo -e "${RED}❌ Stack creation timed out or failed${NC}"
+                echo -e "${YELLOW}🔍 Checking stack status...${NC}"
+                aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text
+                echo -e "${YELLOW}📋 Recent stack events:${NC}"
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[0:5].[Timestamp,ResourceStatus,ResourceStatusReason]' --output table
+                exit 1
+            }
+        else
+            aws cloudformation wait stack-create-complete \
+                --stack-name "$stack_name" \
+                --region "$AWS_REGION" || {
+                echo -e "${RED}❌ Stack creation failed${NC}"
+                echo -e "${YELLOW}🔍 Checking stack status...${NC}"
+                aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text
+                exit 1
+            }
+        fi
     fi
     
     echo -e "${GREEN}✅ Stack ${stack_name} deployed successfully${NC}"
