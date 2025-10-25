@@ -203,10 +203,8 @@ Resources:
             Enabled: true
             LogGroup: !Ref MSKLogGroup
       Tags:
-        - Key: Name
-          Value: !Sub '${Environment}-shoplite-msk-cluster'
-        - Key: Environment
-          Value: !Ref Environment
+        Name: !Sub '${Environment}-shoplite-msk-cluster'
+        Environment: !Ref Environment
 
   MSKKMSKey:
     Type: AWS::KMS::Key

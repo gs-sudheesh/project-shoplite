@@ -41,18 +41,42 @@ echo ""
 deploy_stack() {
     local stack_name=$1
     local template_file=$2
-    shift 2
-    local parameters=("$@")
+    local parameters=$3
     
     echo -e "${YELLOW}📦 Deploying stack: ${stack_name}${NC}"
     
-    # Check if stack exists
+    # Validate CloudFormation template first
+    echo -e "${BLUE}🔍 Validating CloudFormation template: ${template_file}${NC}"
+    if ! aws cloudformation validate-template --template-body "file://$template_file" --region "$AWS_REGION" >/dev/null 2>&1; then
+        echo -e "${RED}❌ CloudFormation template validation failed for ${template_file}${NC}"
+        echo -e "${YELLOW}📋 Validation errors:${NC}"
+        aws cloudformation validate-template --template-body "file://$template_file" --region "$AWS_REGION"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ CloudFormation template validation passed${NC}"
+    
+    # Check if stack exists and clean up if in failed state
+    if aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" >/dev/null 2>&1; then
+        local stack_status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text)
+        echo -e "${BLUE}Stack ${stack_name} exists with status: ${stack_status}${NC}"
+        
+        # If stack is in failed state, delete it first
+        if [[ "$stack_status" == "ROLLBACK_COMPLETE" || "$stack_status" == "CREATE_FAILED" || "$stack_status" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+            echo -e "${YELLOW}🗑️  Deleting failed stack ${stack_name}...${NC}"
+            aws cloudformation delete-stack --stack-name "$stack_name" --region "$AWS_REGION"
+            echo -e "${BLUE}Waiting for stack deletion to complete...${NC}"
+            aws cloudformation wait stack-delete-complete --stack-name "$stack_name" --region "$AWS_REGION"
+            echo -e "${GREEN}✅ Failed stack ${stack_name} deleted successfully${NC}"
+        fi
+    fi
+    
+    # Check if stack exists again (after potential cleanup)
     if aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" >/dev/null 2>&1; then
         echo -e "${BLUE}Stack ${stack_name} exists, updating...${NC}"
         aws cloudformation update-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
-            --parameters "${parameters[@]}" \
+            --parameters "$parameters" \
             --capabilities CAPABILITY_IAM \
             --region "$AWS_REGION"
         
@@ -65,14 +89,41 @@ deploy_stack() {
         aws cloudformation create-stack \
             --stack-name "$stack_name" \
             --template-body "file://$template_file" \
-            --parameters "${parameters[@]}" \
+            --parameters "$parameters" \
             --capabilities CAPABILITY_IAM \
             --region "$AWS_REGION"
         
         echo -e "${BLUE}Waiting for stack creation to complete...${NC}"
-        aws cloudformation wait stack-create-complete \
-            --stack-name "$stack_name" \
-            --region "$AWS_REGION"
+        echo -e "${YELLOW}⏳ This may take 10-15 minutes for database stacks...${NC}"
+        
+        # Add timeout for database stacks (20 minutes)
+        if [[ "$stack_name" == *"databases"* ]]; then
+            timeout 1200 aws cloudformation wait stack-create-complete \
+                --stack-name "$stack_name" \
+                --region "$AWS_REGION" || {
+                echo -e "${RED}❌ Stack creation timed out or failed${NC}"
+                echo -e "${YELLOW}🔍 Checking stack status...${NC}"
+                aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text
+                echo -e "${YELLOW}📋 Recent stack events:${NC}"
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[0:10].[Timestamp,ResourceStatus,ResourceStatusReason,LogicalResourceId]' --output table
+                echo -e "${YELLOW}🔍 Looking for CREATE_FAILED events:${NC}"
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[Timestamp,LogicalResourceId,ResourceStatusReason]' --output table
+                exit 1
+            }
+        else
+            aws cloudformation wait stack-create-complete \
+                --stack-name "$stack_name" \
+                --region "$AWS_REGION" || {
+                echo -e "${RED}❌ Stack creation failed${NC}"
+                echo -e "${YELLOW}🔍 Checking stack status...${NC}"
+                aws cloudformation describe-stacks --stack-name "$stack_name" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text
+                echo -e "${YELLOW}📋 Recent stack events:${NC}"
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[0:10].[Timestamp,ResourceStatus,ResourceStatusReason,LogicalResourceId]' --output table
+                echo -e "${YELLOW}🔍 Looking for CREATE_FAILED events:${NC}"
+                aws cloudformation describe-stack-events --stack-name "$stack_name" --region "$AWS_REGION" --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`].[Timestamp,LogicalResourceId,ResourceStatusReason]' --output table
+                exit 1
+            }
+        fi
     fi
     
     echo -e "${GREEN}✅ Stack ${stack_name} deployed successfully${NC}"
@@ -130,11 +181,7 @@ main() {
     deploy_stack \
         "${ENVIRONMENT}-shoplite-databases" \
         "aws/infrastructure/cloudformation/databases.yml" \
-        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT}" \
-        "ParameterKey=DBUsername,ParameterValue=${DB_USERNAME}" \
-        "ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD}" \
-        "ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME}" \
-        "ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
+        "ParameterKey=Environment,ParameterValue=${ENVIRONMENT} ParameterKey=DBUsername,ParameterValue=${DB_USERNAME} ParameterKey=DBPassword,ParameterValue=${DB_PASSWORD} ParameterKey=DocumentDBUsername,ParameterValue=${DOCUMENTDB_USERNAME} ParameterKey=DocumentDBPassword,ParameterValue=${DOCUMENTDB_PASSWORD}"
     
     # 3. Deploy ECS infrastructure
     deploy_stack \
